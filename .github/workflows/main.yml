@@ -1,0 +1,55 @@
+name: Build and Push Tag and Image
+on:
+  push:
+    branches:
+      - trunk
+jobs:
+  tag:
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: '0'
+    - 
+      name: Push tag
+      run: |
+          git tag ${{github.run_id}}
+          git push origin ${{github.run_id}}
+    -
+      name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    -
+      name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    -
+      name: Build and push
+      uses: docker/build-push-action@v3
+      with:
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: ${{ secrets.DOCKERHUB_USERNAME }}/bookish-memory:${{ github.run_id }}
+    - 
+      name: Checkout Gitops
+      uses: actions/checkout@v3
+      with:
+        repository: audryus/gitops-argo
+        ref: 'trunk'
+        token:  ${{ secrets.TOKEN }}
+        fetch-depth: 0
+    - 
+      name: Update manifests
+      run: |
+        sleep 1
+        cd bookish-memory/overlays/oci/
+        cat deployment.yaml | sed 's/${{ secrets.DOCKERHUB_USERNAME }}\/bookish-memory:.*/${{ secrets.DOCKERHUB_USERNAME }}\/bookish-memory:${{ github.run_id }}/' | tee deployment.yaml
+        git config --global user.email "<>"
+        git config --global user.name "GitHub Action"
+        git add .
+        git commit -m "Promoting bookish-memory ${{ github.run_id }}"
+        git push origin trunk
